@@ -1,31 +1,47 @@
-# Python bytecode cache
+# Local Firebase web configuration
+web/.env.local
+web/.env.*.local
+
+# Environment variables - never commit these!
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
 
-# Virtual environments
-venv/
-.env/
-.venv/
-
-# Data files (generated at runtime - contain trip/social data)
+# Data files - generated at runtime
 data/trips.json
 data/social.json
-
-# Operational data
 data/group_photos/
 
-# Site specific
-.site/
+# Node
+web/node_modules/
+web/dist/
 
-# IPython/Jupyter cache
-__pycache__/
+# Local prototype data and uploaded media
+# Keep the supplied trips.json reference file; ignore future runtime data.
+
+# Security - never commit these (API keys, secrets, tokens)
+secrets.json
+keys.json
+config*.json
+*.key
+*.pem
+*.crt
+*.cert
+
+# Operating system
+.DS_Store
+Thumbs.db
 
 # Distribution / packaging
 dist/
 build/
 *.egg-info/
 
-# Operating system
-.DS_Store
-Thumbs.db
+# Database files
+*.db
+*.sqlite
+*.sqlite3

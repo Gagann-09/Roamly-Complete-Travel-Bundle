@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInAs(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validProfile(userId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'photoURL', 'bio', 'homeCity',
+          'country', 'interests', 'preferredDestinations', 'travelStyle',
+          'budgetRange', 'travelPace', 'onboardingCompleted', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'uid', 'displayName', 'email', 'photoURL', 'bio', 'homeCity',
+          'country', 'interests', 'preferredDestinations', 'travelStyle',
+          'budgetRange', 'travelPace', 'onboardingCompleted', 'createdAt', 'updatedAt'
+        ])
+        && data.uid == userId
+        && data.email == request.auth.token.email
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 60
+        && data.photoURL is string && data.photoURL.size() <= 2048
+        && data.bio is string && data.bio.size() <= 240
+        && data.homeCity is string && data.homeCity.size() >= 2 && data.homeCity.size() <= 60
+        && data.country is string && data.country.size() >= 2 && data.country.size() <= 60
+        && data.interests is list && data.interests.size() >= 1 && data.interests.size() <= 6
+        && data.preferredDestinations is list && data.preferredDestinations.size() >= 1 && data.preferredDestinations.size() <= 8
+        && data.travelStyle in ['Solo travel', 'Group travel', 'Backpacking', 'Comfort-first', 'Open to anything']
+        && data.budgetRange in ['Budget', 'Mid-range', 'Premium', 'Flexible']
+        && data.travelPace in ['Relaxed', 'Balanced', 'Packed']
+        && data.onboardingCompleted == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if signedInAs(userId);
+      allow list: if false;
+      allow create, update: if signedInAs(userId) && validProfile(userId);
+      allow delete: if signedInAs(userId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
