@@ -1,0 +1,31 @@
+# Python bytecode cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# Data files (generated at runtime - contain trip/social data)
+data/trips.json
+data/social.json
+
+# Operational data
+data/group_photos/
+
+# Site specific
+.site/
+
+# IPython/Jupyter cache
+__pycache__/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Operating system
+.DS_Store
+Thumbs.db
