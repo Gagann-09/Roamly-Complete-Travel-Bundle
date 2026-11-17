@@ -1,4 +1,4 @@
-import json, os, re, math, uuid, time, threading, urllib.request, base64
+import json, os, re, math, uuid, time, threading, urllib.request
 from datetime import date as date_cls
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -7,18 +7,17 @@ from data import DEST, C, TIERS
 ROOT = Path(__file__).parent
 DB = Path(os.environ.get("DATA_FILE", ROOT / "data" / "trips.json"))
 SOCIAL_DB = Path(os.environ.get("SOCIAL_FILE", ROOT / "data" / "social.json"))
-PHOTOS_ROOT = Path(os.environ.get("PHOTOS_DIR", ROOT / "data" / "group_photos"))
 LOCK = threading.Lock()
 
 def social_load():
     try:
         data = json.loads(SOCIAL_DB.read_text())
         if isinstance(data, dict):
-            data.setdefault("profiles", {}); data.setdefault("groups", {}); data.setdefault("swipes", {}); data.setdefault("expenses", {}); data.setdefault("photos", {})
+            data.setdefault("profiles", {}); data.setdefault("groups", {}); data.setdefault("swipes", {}); data.setdefault("expenses", {})
             return data
     except (FileNotFoundError, ValueError):
         pass
-    return {"profiles": {}, "groups": {}, "swipes": {}, "expenses": {}, "photos": {}}
+    return {"profiles": {}, "groups": {}, "swipes": {}, "expenses": {}}
 
 def social_save(data):
     SOCIAL_DB.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +205,27 @@ class H(BaseHTTPRequestHandler):
     def out(s, code, obj, ct="application/json"):
         b = obj if isinstance(obj, bytes) else json.dumps(obj).encode()
         s.send_response(code); s.send_header("Content-Type", ct); s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b)
+    def auth_uid(s):
+        if os.environ.get("ROAMLY_TEST_MODE") == "1":
+            return s.headers.get("X-User-ID", "")[:128]
+        header = s.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            raise Err(401, "Sign in to Roamly to continue.")
+        try:
+            import firebase_admin
+            from firebase_admin import auth as firebase_auth
+            if not firebase_admin._apps:
+                try:
+                    firebase_admin.initialize_app(options={"projectId": os.environ.get("FIREBASE_PROJECT_ID", "roamly-production-40a79")})
+                except Exception:
+                    raise Err(503, "Configure GOOGLE_APPLICATION_CREDENTIALS for Firebase Admin before using Explore.")
+            try:
+                claims = firebase_auth.verify_id_token(header[7:].strip(), check_revoked=True)
+                return str(claims["uid"])
+            except Exception:
+                raise Err(401, "Your sign-in token is invalid or expired. Sign in again.")
+        except ImportError:
+            raise Err(503, "Install requirements.txt to enable Firebase token verification.")
     def body(s):
         n = int(s.headers.get("Content-Length") or 0)
         if n > 8_000_000: raise Err(413, "Upload too large. Maximum request size is 8 MB.")
@@ -219,47 +239,47 @@ class H(BaseHTTPRequestHandler):
             if meth == "GET" and path == "/": return s.out(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
             if meth == "GET" and path == "/api/health": return s.out(200, {"ok": True, "ai_configured": bool(os.environ.get("ANTHROPIC_API_KEY"))})
             if meth == "GET" and path == "/api/destinations": return s.out(200, {"destinations": [{"id": k, "name": d["name"], "best": d["best"]} for k, d in DEST.items()], "interests": list(C)})
+            uid = s.auth_uid()
             with LOCK:
                 db = load()
                 if path == "/api/trips":
-                    if meth == "GET": return s.out(200, sorted((view(t) for t in db.values()), key=lambda v: -v["created"]))
-                    if meth == "POST": t = create(s.body()); db[t["id"]] = t; save(db); return s.out(201, view(t))
+                    if meth == "GET": return s.out(200, sorted((view(t) for t in db.values() if t.get("owner_uid") == uid), key=lambda v: -v["created"]))
+                    if meth == "POST": t = create(s.body()); t["owner_uid"] = uid; db[t["id"]] = t; save(db); return s.out(201, view(t))
                 if (m := re.fullmatch(r"/api/trips/([\w-]+)", path)):
                     t = db.get(m[1])
-                    if not t: raise Err(404, "Trip not found.")
+                    if not t or t.get("owner_uid") != uid: raise Err(404, "Trip not found.")
                     if meth == "GET": return s.out(200, view(t))
                     if meth == "DELETE": del db[m[1]]; save(db); return s.out(200, {"deleted": m[1]})
                 if (m := re.fullmatch(r"/api/trips/([\w-]+)/chat", path)) and meth == "POST":
                     t = db.get(m[1]); msg = str(s.body().get("message", "")).strip()
-                    if not t: raise Err(404, "Trip not found.")
+                    if not t or t.get("owner_uid") != uid: raise Err(404, "Trip not found.")
                     if not 1 <= len(msg) <= 500: raise Err(422, "Message must be 1 to 500 characters.")
                     chat(t, msg); save(db); return s.out(200, view(t))
                 if (m := re.fullmatch(r"/api/trips/([\w-]+)/days/(\d+)/items/(\d+)", path)) and meth == "DELETE":
                     t = db.get(m[1])
-                    if not t: raise Err(404, "Trip not found.")
+                    if not t or t.get("owner_uid") != uid: raise Err(404, "Trip not found.")
                     d, i = int(m[2]), int(m[3])
                     if d >= len(t["days"]) or i >= len(t["days"][d]): raise Err(404, "Activity not found.")
                     t["days"][d].pop(i); save(db); return s.out(200, view(t))
-            # Social prototype: shared server-side community, without authentication.
+            # Authenticated community APIs; Firebase ID tokens are verified server-side.
             if path == "/api/social" and meth == "GET":
-                uid = s.headers.get("X-User-ID", "")[:80]
+                
                 return s.out(200, social_snapshot(social_load(), uid))
-            # Group spaces: membership is checked on every expense and photo request.
+            # Group spaces: membership is checked on every request.
             if (m := re.fullmatch(r"/api/social/groups/([\w-]+)/space", path)) and meth == "GET":
-                uid = s.headers.get("X-User-ID", "")[:80]; data = social_load(); group = data["groups"].get(m[1])
+                data = social_load(); group = data["groups"].get(m[1])
                 if not group: raise Err(404, "Trip group not found.")
                 if uid not in group.get("members", []): raise Err(403, "Only trip members can open this group space.")
                 members = [{"id": mid, "name": data["profiles"].get(mid, {}).get("name", "Traveler")} for mid in group["members"]]
                 expenses = data["expenses"].get(m[1], [])
-                photos = data["photos"].get(m[1], [])
                 paid = {mid: 0 for mid in group["members"]}
                 for expense in expenses:
                     if expense["payer_id"] in paid: paid[expense["payer_id"]] += expense["amount"]
                 total = sum(x["amount"] for x in expenses); share = total / max(len(members), 1)
                 balances = [{"id": mid, "name": data["profiles"].get(mid, {}).get("name", "Traveler"), "paid": round(paid[mid], 2), "share": round(share, 2), "balance": round(paid[mid]-share, 2)} for mid in group["members"]]
-                return s.out(200, {"group": {"id": group["id"], "title": group["title"], "destination_name": group["destination_name"], "date": group["date"], "members": members}, "expenses": expenses, "total": round(total, 2), "balances": balances, "photos": [{k: x[k] for k in ("id", "name", "uploaded_by", "created")} for x in photos]})
+                return s.out(200, {"group": {"id": group["id"], "title": group["title"], "destination_name": group["destination_name"], "date": group["date"], "members": members}, "expenses": expenses, "total": round(total, 2), "balances": balances})
             if (m := re.fullmatch(r"/api/social/groups/([\w-]+)/expenses", path)) and meth == "POST":
-                uid = s.headers.get("X-User-ID", "")[:80]; data = social_load(); group = data["groups"].get(m[1])
+                data = social_load(); group = data["groups"].get(m[1])
                 if not group: raise Err(404, "Trip group not found.")
                 if uid not in group.get("members", []): raise Err(403, "Only trip members can add expenses.")
                 body = s.body(); title = str(body.get("title", "")).strip()[:80]
@@ -269,37 +289,8 @@ class H(BaseHTTPRequestHandler):
                 expense = {"id": uuid.uuid4().hex[:10], "title": title, "amount": amount, "payer_id": uid, "payer": data["profiles"].get(uid, {}).get("name", "Traveler"), "created": int(time.time())}
                 data["expenses"].setdefault(m[1], []).append(expense); social_save(data)
                 return s.out(201, {"expense": expense})
-            if (m := re.fullmatch(r"/api/social/groups/([\w-]+)/photos", path)) and meth == "POST":
-                uid = s.headers.get("X-User-ID", "")[:80]; data = social_load(); group = data["groups"].get(m[1])
-                if not group: raise Err(404, "Trip group not found.")
-                if uid not in group.get("members", []): raise Err(403, "Only trip members can upload photos.")
-                body = s.body(); name = re.sub(r"[^\w .()-]", "", str(body.get("name", "photo")))[:100] or "photo"
-                mime = body.get("mime"); raw = body.get("data", "")
-                if mime not in ("image/jpeg", "image/png", "image/webp") or not isinstance(raw, str): raise Err(422, "Use a JPG, PNG, or WebP image.")
-                try: content = base64.b64decode(raw, validate=True)
-                except (ValueError, base64.binascii.Error): raise Err(422, "Invalid image upload.")
-                if not content or len(content) > 5_000_000: raise Err(413, "Each photo must be smaller than 5 MB.")
-                valid = ((mime == "image/jpeg" and content.startswith(b"\xff\xd8\xff")) or (mime == "image/png" and content.startswith(b"\x89PNG\r\n\x1a\n")) or (mime == "image/webp" and content.startswith(b"RIFF") and content[8:12] == b"WEBP"))
-                if not valid: raise Err(422, "The file contents do not match the selected image type.")
-                photos = data["photos"].setdefault(m[1], [])
-                if len(photos) >= 100: raise Err(409, "This group photo vault has reached its 100-photo limit.")
-                photo_id = uuid.uuid4().hex[:12]; ext = {"image/jpeg":"jpg", "image/png":"png", "image/webp":"webp"}[mime]
-                folder = PHOTOS_ROOT / m[1]; folder.mkdir(parents=True, exist_ok=True)
-                (folder / f"{photo_id}.{ext}").write_bytes(content)
-                photo = {"id": photo_id, "name": name, "mime": mime, "ext": ext, "uploaded_by": data["profiles"].get(uid, {}).get("name", "Traveler"), "created": int(time.time())}
-                photos.append(photo); social_save(data)
-                return s.out(201, {"photo": {k: photo[k] for k in ("id", "name", "uploaded_by", "created")}})
-            if (m := re.fullmatch(r"/api/social/groups/([\w-]+)/photos/([\w-]+)", path)) and meth == "GET":
-                uid = s.headers.get("X-User-ID", "")[:80]; data = social_load(); group = data["groups"].get(m[1])
-                if not group: raise Err(404, "Trip group not found.")
-                if uid not in group.get("members", []): raise Err(403, "Only trip members can view these photos.")
-                photo = next((x for x in data["photos"].get(m[1], []) if x["id"] == m[2]), None)
-                if not photo: raise Err(404, "Photo not found.")
-                file = PHOTOS_ROOT / m[1] / f"{photo['id']}.{photo['ext']}"
-                if not file.is_file(): raise Err(404, "Photo file is missing.")
-                return s.out(200, file.read_bytes(), photo["mime"])
             if path == "/api/social/profile" and meth == "POST":
-                body = s.body(); uid = s.headers.get("X-User-ID", "")[:80]
+                body = s.body(); 
                 name = str(body.get("name", "")).strip()[:40]
                 if not uid or len(name) < 2: raise Err(422, "Add a name with at least 2 characters.")
                 interests = body.get("interests", [])
@@ -316,7 +307,7 @@ class H(BaseHTTPRequestHandler):
                     "created": old.get("created", int(time.time()))}
                 social_save(data); return s.out(200, social_snapshot(data, uid))
             if path == "/api/social/groups" and meth == "POST":
-                body = s.body(); uid = s.headers.get("X-User-ID", "")[:80]; data = social_load()
+                body = s.body(); data = social_load()
                 profile = data["profiles"].get(uid)
                 if not profile: raise Err(403, "Create your traveler profile first.")
                 dest = body.get("destination")
@@ -336,7 +327,7 @@ class H(BaseHTTPRequestHandler):
                     "members": [uid], "created": int(time.time())}
                 data["groups"][gid] = group; social_save(data); return s.out(201, social_snapshot(data, uid))
             if (m := re.fullmatch(r"/api/social/groups/([\w-]+)/join", path)) and meth == "POST":
-                uid = s.headers.get("X-User-ID", "")[:80]; data = social_load(); group = data["groups"].get(m[1])
+                data = social_load(); group = data["groups"].get(m[1])
                 if not data["profiles"].get(uid): raise Err(403, "Create your traveler profile first.")
                 if not group: raise Err(404, "Trip group not found.")
                 if uid == group["owner"]: raise Err(422, "You already host this trip.")
@@ -345,7 +336,7 @@ class H(BaseHTTPRequestHandler):
                     group["members"].append(uid); social_save(data)
                 return s.out(200, social_snapshot(data, uid))
             if path == "/api/social/swipe" and meth == "POST":
-                body = s.body(); uid = s.headers.get("X-User-ID", "")[:80]
+                body = s.body(); 
                 target = str(body.get("target_id", ""))[:80]; direction = body.get("direction")
                 data = social_load()
                 if not data["profiles"].get(uid): raise Err(403, "Create your traveler profile first.")

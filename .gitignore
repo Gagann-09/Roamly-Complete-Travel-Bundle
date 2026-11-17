@@ -29,7 +29,7 @@ build/
 *.egg-info/
 
 # ✅ IPython / Jupyter cache
-__pycache__/
+# (handled by __pycache__/ above)
 
 # ✅ Local Firebase web configuration
 web/.env.local
@@ -39,26 +39,13 @@ web/.env.*.local
 web/node_modules/
 web/dist/
 
+# ✅ React / Vite public output (build-generated, not source)
+web/public/
+
 # ✅ Database files (never commit — contains credentials etc)
 *.db
 *.sqlite
 *.sqlite3
-
-# ✅ Secret / key files (never commit — prevents GitHub key leaks)
-secrets.json
-keys.json
-*.key
-*.pem
-*.crt
-*.cert
-config*.json
-
-# ✅ Operating system junk
-.DS_Store
-Thumbs.db
-
-# ✅ React / Vite public output (build-generated, not source)
-web/public/
 
 # ✅ Test / coverage artifacts
 .hcov/
@@ -67,6 +54,19 @@ web/public/
 # ✅ Lint / format outputs
 .prettier.json
 eslint.cache.js
+
+# ✅ Security - never commit these (API keys, secrets, tokens)
+secrets.json
+keys.json
+config*.json
+*.key
+*.pem
+*.crt
+*.cert
+
+# ✅ Operating system junk
+.DS_Store
+Thumbs.db
 
 # ============================================================
 # End of .gitignore

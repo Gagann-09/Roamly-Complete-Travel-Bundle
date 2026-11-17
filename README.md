@@ -1,124 +1,111 @@
-# Roamly Buddy 2.3.1 — Phase 1 Foundation
+# Roamly Buddy 2.3.2 — Authenticated Explore Prototype
 
-### 2.3.1 patch
+## What's included
 
-- Landing-page section links appear only on the public landing screen; they are hidden on login, registration, onboarding, dashboard, and profile screens.
-- No authentication, Firestore data model, security rules, or page content was changed.
+- Responsive React + TypeScript landing, Firebase authentication, and traveller onboarding.
+- Google and email/password authentication, email verification, and password reset.
+- Traveller profile stored in Firestore under the signed-in Firebase UID.
+- A clear **Explore Roamly** action after profile completion.
+- Explore workspace connected to that Firebase account:
+  - AI trip planner with day-wise itinerary, budget estimates, map, and conversational edits.
+  - Community trip discovery, group creation, and joining.
+  - Travel-buddy discovery with like/pass and mutual matching.
+  - Members-only group spaces with shared expense entry and equal split calculations.
+  - My trips, joined communities, and mutual matches.
+- Group photo upload/storage is intentionally disabled and postponed.
+- Trip records are scoped to their authenticated Firebase UID.
+- Backend verifies Firebase ID tokens using Firebase Admin SDK.
 
-Roamly Buddy 2.3 adds a professional React website and Firebase-backed account/profile foundation to the existing Roamly 2.2 prototype. The original Python prototype and its trip-planning, community, buddy, expense, and photo-vault code are retained as a reference; they are not yet production-secured.
+## Firebase project
 
-## Phase 1 scope in 2.3
+The configured project is `roamly-production-40a79`, in `asia-south1` (Mumbai). Keep Firestore on the default database. No additional database is required.
 
-- Professional responsive React + TypeScript website.
-- Firebase Authentication integration for Google and email/password.
-- Apple sign-in client integration is included, but the Apple provider must be configured in Firebase with Apple Developer credentials before it can work.
-- Email verification and password reset.
-- First-login traveller profile onboarding.
-- Profile editing and account deletion.
-- Firestore user documents keyed by Firebase Authentication UID.
-- A restrictive Firestore rules file at `firestore.rules`.
-- No hardcoded/demo people in the new Phase 1 website.
-- No group-photo storage migration or Phase 2 implementation.
+### Web configuration
 
-## Requirements
+In `web/.env.local`, use the Firebase Web App configuration from Firebase Console → Project settings → General → Your apps. Copy `.env.example` and fill in the values. Never put a service-account JSON or private key in this file.
 
-- Windows 10/11
-- Node.js 20 or later (Node.js 22 LTS recommended)
-- npm
-- A Firebase project on the Spark plan
+### Authentication
 
-## Configure Firebase
-
-The Firebase project selected for this build is `roamly-production-40a79` in `asia-south1` (Mumbai).
-
-1. In Firebase Console, open **Project settings → General → Your apps → Roamly Web**.
-2. Copy the web app configuration values. These are client configuration values, not service-account credentials.
-3. In the `web` folder, copy `.env.example` to `.env.local`.
-4. Fill in the actual values:
-
-```env
-VITE_FIREBASE_API_KEY=your-web-api-key
-VITE_FIREBASE_AUTH_DOMAIN=roamly-production-40a79.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=roamly-production-40a79
-VITE_FIREBASE_STORAGE_BUCKET=your-value-from-firebase-config
-VITE_FIREBASE_MESSAGING_SENDER_ID=your-value-from-firebase-config
-VITE_FIREBASE_APP_ID=your-value-from-firebase-config
-```
-
-Do not add a Firebase Admin service-account JSON file or private key to this frontend project. Do not commit `.env.local`.
-
-### Authentication providers
-
-Firebase Console → Authentication → Sign-in method:
-
-- Email/Password: enable.
-- Google: enable and select the support email.
-- Apple: the web OAuth client is implemented, but the provider is not enabled by this prototype setup. Apple Developer configuration (Services ID, Team ID, Key ID, private key, and return URL) is required before enabling it. Do not expect Apple login to work until those steps are completed.
-
-Add the development hostname to Authentication → Settings → Authorized domains if Firebase does not already list it. The Vite development command uses `localhost`.
+Enable Email/Password and Google in Firebase Console → Authentication → Sign-in method. Apple sign-in remains optional and requires Apple Developer configuration. Ensure `localhost` is an authorised domain.
 
 ### Firestore rules
 
-The existing initial owner-only rules were published during setup. This ZIP includes a stricter profile schema in `firestore.rules`.
+Publish the included `firestore.rules` in Firestore → Rules. The current rules allow each user to read and write only their own `/users/{uid}` profile. Other Firestore collections remain denied; the prototype's trip/community data is stored by the local Python backend.
 
-Before testing profile writes, open Firestore → Rules, replace the editor contents with the contents of `firestore.rules`, and click **Publish**. These rules:
+### Backend token verification
 
-- allow a signed-in user to read only `/users/{their-own-uid}`;
-- deny listing user documents;
-- validate profile fields and types on create/update;
-- allow a user to delete only their own profile document;
-- deny every other collection by default.
+The Python API verifies Firebase ID tokens. Install its dependency:
 
-No collection needs to be created manually. Firestore creates `users` when the first profile is saved.
+```powershell
+# From the project root
+py -m pip install -r requirements.txt
+```
 
-## Run the new website
+Create a Firebase service-account credential in Firebase Console → Project settings → Service accounts. Store the downloaded JSON **outside this project folder**. Then set Application Default Credentials in the PowerShell window used to run the backend:
 
-Open PowerShell in the extracted `travel-buddy` folder:
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\secure\roamly-firebase-admin.json"
+$env:FIREBASE_PROJECT_ID="roamly-production-40a79"
+py server.py
+```
+
+Do not commit or share the service-account file. Do not enable `ROAMLY_TEST_MODE` outside automated tests.
+
+## Run locally
+
+Use two PowerShell terminals.
+
+**Terminal 1 — backend**, from the project root:
+
+```powershell
+py -m pip install -r requirements.txt
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\secure\roamly-firebase-admin.json"
+$env:FIREBASE_PROJECT_ID="roamly-production-40a79"
+py server.py
+```
+
+**Terminal 2 — frontend:**
 
 ```powershell
 cd web
 npm install
 Copy-Item .env.example .env.local
-# Edit .env.local with the Firebase Web App values before starting.
+# Fill web/.env.local with your Firebase Web App values.
 npm run dev
 ```
 
-Open the local URL printed by Vite, normally `http://localhost:5173`.
+Open the Vite URL, normally `http://localhost:5173`. Vite proxies `/api` requests to the local Python API on port 8000. Sign in, complete the profile, and select **Explore Roamly**.
 
-The first screen is the professional Roamly landing page. Create an account or log in. Email/password registration sends an email verification link. After verification and sign-in, complete the three-step traveller profile. The profile is saved to Firestore under the authenticated Firebase UID.
+## Test
 
-## Existing prototype (preserved)
-
-The previous prototype is retained at the root of this project. To run its local Python server separately:
+From the project root:
 
 ```powershell
-python server.py
+py -m pip install -r requirements.txt
+py test.py
 ```
 
-Open `http://localhost:8000` for the original prototype. This legacy server is retained for feature reference and local testing only.
+The automated test suite uses a test-only identity stub. The running application does not. Do not set `ROAMLY_TEST_MODE=1` in a real run.
 
-**Do not deploy the legacy Python server publicly yet.** Its API still trusts browser-generated `X-User-ID` values and has no Firebase ID-token verification or per-user trip ownership. The old social/photo APIs remain prototype-only. The new Phase 1 React website does not call those APIs.
-
-Run the legacy regression suite from the root folder:
+Frontend production build:
 
 ```powershell
-python test.py
+cd web
+npm run build
 ```
 
-## What is not complete yet
+## Important prototype boundaries
 
-- Firebase live end-to-end testing: requires the actual web configuration and browser access to the user's Firebase project.
-- Apple provider: requires Apple Developer configuration and enabling the provider in Firebase.
-- Production hosting and custom domain.
-- Production security review, automated browser tests, monitoring, privacy policy, terms, and support contact.
-- Migration of existing prototype trips/profiles into authenticated accounts.
-- Phase 2 private group photo storage: explicitly not started.
+- The Python backend stores trips, community profiles, groups, swipes, and expenses in local JSON files. Back up `data/` before replacing the local environment.
+- Firebase Authentication tokens are verified server-side. Trip records are scoped to their owner. Group-space and expense endpoints check membership.
+- The prototype does not yet provide managed cloud hosting, cross-device database persistence for trip/community data, moderation, reporting/blocking, private messaging, or real-time notifications.
+- Group photo upload and storage are removed from this version. No photo bytes are accepted or persisted.
+- The rule-based itinerary planner works without an AI key. Claude enhancement remains optional through `ANTHROPIC_API_KEY`.
+- Map tiles require an internet connection. Estimated budgets and activity details are prototype estimates, not live quotes.
+- Do not expose the Python server publicly until deployment hardening, rate limiting, monitoring, and a full security review are completed.
 
-## Security notes
+## Security files
 
-- Firebase client configuration is not a server secret; Firestore Security Rules are the access boundary.
-- The new app writes profile documents only under the authenticated Firebase UID.
-- Profile documents are private to their owner in the current Phase 1 rules; public profile discovery is intentionally not enabled.
-- The profile photo currently uses the Google/Apple provider photo URL when available. No photo upload/storage feature is included in Phase 1.
-- Account deletion requires recent authentication. The app requests reauthentication before deleting the profile and Firebase account.
-- A working build and real Firebase sign-in must be verified on the user's Windows environment after npm dependencies are installed and `.env.local` is configured.
+- `firestore.rules` protects per-user profile documents.
+- `web/.env.local` and service-account credentials must remain local and untracked.
+- The ZIP intentionally excludes `.env.local`, `node_modules`, `.git`, generated data, and Python caches.

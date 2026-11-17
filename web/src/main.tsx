@@ -42,7 +42,7 @@ type Profile = {
   onboardingCompleted: boolean;
 };
 
-type Screen = 'home' | 'auth' | 'onboarding' | 'dashboard' | 'profile';
+type Screen = 'home' | 'auth' | 'onboarding' | 'dashboard' | 'profile' | 'explore';
 type AuthMode = 'login' | 'register';
 
 const interests = [
@@ -207,7 +207,8 @@ function App() {
       onBack={() => setScreen('home')} onReset={resetPassword} />}
     {screen === 'onboarding' && user && <Onboarding initial={profile || blankProfile(user)} busy={busy} error={error}
       onSave={saveProfile} onLogout={logout} />}
-    {screen === 'dashboard' && user && profile && <Dashboard user={user} profile={profile} onEdit={() => setScreen('profile')} onLogout={logout} />}
+    {screen === 'dashboard' && user && profile && <Dashboard user={user} profile={profile} onEdit={() => setScreen('profile')} onExplore={() => setScreen('explore')} onLogout={logout} />}
+    {screen === 'explore' && user && profile && <ExploreArea user={user} profile={profile} onBack={() => setScreen('dashboard')} onLogout={logout} />}
     {screen === 'profile' && user && profile && <ProfileEditor profile={profile} busy={busy} error={error} onSave={async (p) => { await saveProfile(p); setScreen('profile'); }}
       onCancel={() => setScreen('dashboard')} onDelete={removeAccount} />}
     <Footer />
@@ -282,13 +283,42 @@ function Onboarding({ initial, busy, error, onSave, onLogout }: { initial: Profi
   </section><p className="onboarding-footnote">Your profile belongs to you. You control what you share.</p></main>;
 }
 
-function Dashboard({ user, profile, onEdit, onLogout }: { user: FirebaseUser; profile: Profile; onEdit: () => void; onLogout: () => void }) {
+function Dashboard({ user, profile, onEdit, onExplore, onLogout }: { user: FirebaseUser; profile: Profile; onEdit: () => void; onExplore: () => void; onLogout: () => void }) {
   const greeting = profile.displayName.split(' ')[0] || 'traveller';
-  return <main className="dashboard-wrap"><section className="welcome-panel"><div className="welcome-copy"><div className="eyebrow">YOUR ROAMLY SPACE</div><h1>Good to have you,<br/><em>{greeting}.</em></h1><p>Your traveller profile is ready. This is the beginning of a more connected way to explore.</p><button className="button button-dark" onClick={onEdit}>View your profile <ArrowRight size={16}/></button></div><div className="welcome-art"><div className="welcome-orbit orbit-one"/><div className="welcome-orbit orbit-two"/><Plane size={78}/><span>✳</span></div></section>
+  return <main className="dashboard-wrap"><section className="welcome-panel"><div className="welcome-copy"><div className="eyebrow">YOUR ROAMLY SPACE</div><h1>Good to have you,<br/><em>{greeting}.</em></h1><p>Your traveller profile is ready. This is the beginning of a more connected way to explore.</p><button className="button button-dark" onClick={onExplore}>Explore Roamly <ArrowRight size={16}/></button></div><div className="welcome-art"><div className="welcome-orbit orbit-one"/><div className="welcome-orbit orbit-two"/><Plane size={78}/><span>✳</span></div></section>
     <div className="dashboard-section-head"><div><div className="eyebrow">YOUR TRAVEL IDENTITY</div><h2>A little more about you.</h2></div><button className="text-button" onClick={onEdit}>Edit profile <ArrowRight size={15}/></button></div>
     <section className="profile-overview"><div className="profile-main"><div className="large-avatar">{profile.photoURL ? <img src={profile.photoURL} alt="Profile"/> : (profile.displayName[0] || 'R').toUpperCase()}</div><div><h3>{profile.displayName}</h3><p>{profile.homeCity}, {profile.country}</p><span className="account-email"><Mail size={13}/>{user.email}</span></div></div><p className="profile-bio">{profile.bio || 'A traveller with room for new stories.'}</p><div className="profile-tags">{profile.interests.map(x => <span key={x}>{x}</span>)}</div><div className="profile-meta"><span><b>Travel style</b>{profile.travelStyle}</span><span><b>Budget</b>{profile.budgetRange}</span><span><b>Pace</b>{profile.travelPace}</span></div></section>
-    <section className="next-steps"><div className="next-step-icon"><Sparkles/></div><div><h3>Your next adventure is taking shape.</h3><p>We're building Roamly one thoughtful step at a time. Trip planning and traveller discovery will connect to your account in a later phase.</p></div><span className="coming-soon">COMING NEXT</span></section>
+    <section className="next-steps"><div className="next-step-icon"><Sparkles/></div><div><h3>Your Roamly journey starts here.</h3><p>Plan trips, join communities, and discover compatible travel buddies.</p></div><button className="button button-dark" onClick={onExplore}>Explore now <ArrowRight size={16}/></button></section>
     <div className="dashboard-bottom"><span><ShieldCheck size={15}/> Signed in securely with Firebase</span><button className="text-button" onClick={onLogout}><LogOut size={15}/> Log out</button></div>
+  </main>;
+}
+
+
+function ExploreArea({ user, profile, onBack, onLogout }: { user: FirebaseUser; profile: Profile; onBack: () => void; onLogout: () => void }) {
+  const frame = React.useRef<HTMLIFrameElement>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('');
+  const sendIdentity = async () => {
+    try {
+      const token = await user.getIdToken();
+      frame.current?.contentWindow?.postMessage({
+        type: 'ROAMLY_AUTH', uid: user.uid, token,
+        profile: {
+          name: profile.displayName, home: profile.homeCity, bio: profile.bio,
+          interests: profile.interests.map(x => ({ Adventure: 'adventure', Beaches: 'relax', Photography: 'nature', Food: 'food', Nature: 'nature', Culture: 'culture' } as Record<string,string>)[x]).filter(Boolean),
+          destinations: profile.preferredDestinations.map(x => x.toLowerCase()).filter(x => ['goa','jaipur','munnar','rishikesh','hampi'].includes(x)),
+          budget: profile.budgetRange === 'Budget' ? 'budget' : profile.budgetRange === 'Premium' ? 'luxury' : 'mid',
+          pace: profile.travelPace.toLowerCase()
+        }
+      }, window.location.origin);
+      setReady(true);
+    } catch { setError('Could not connect your account. Sign in again.'); }
+  };
+  return <main className="explore-shell">
+    <div className="explore-toolbar"><div><span className="eyebrow">YOUR ROAMLY SPACE</span><h1>Explore Roamly</h1></div><div className="explore-actions"><button className="text-button" onClick={onBack}>Back to profile</button><button className="text-button" onClick={onLogout}>Log out</button></div></div>
+    {error && <div className="alert alert-error">{error}</div>}
+    {!ready && <div className="explore-loading"><LoaderCircle className="spin"/> Connecting your account and traveller profile…</div>}
+    <iframe ref={frame} title="Roamly Explore workspace" src="/explore.html" onLoad={() => void sendIdentity()} className="explore-frame" />
   </main>;
 }
 

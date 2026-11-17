@@ -10,11 +10,11 @@ def main():
     port = free_port()
     with tempfile.TemporaryDirectory() as td:
         env = {**os.environ, "PORT": str(port), "DATA_FILE": td + "/trips.json",
-               "SOCIAL_FILE": td + "/social.json", "PHOTOS_DIR": td + "/photos", "ANTHROPIC_API_KEY": ""}
+               "SOCIAL_FILE": td + "/social.json", "ANTHROPIC_API_KEY": "", "ROAMLY_TEST_MODE": "1"}
         server = subprocess.Popen([sys.executable, "server.py"], cwd=os.path.dirname(__file__), env=env,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         base = f"http://127.0.0.1:{port}"
-        def call(method, path, body=None, uid=None):
+        def call(method, path, body=None, uid="u1"):
             headers = {"Content-Type": "application/json"}
             if uid: headers["X-User-ID"] = uid
             req = urllib.request.Request(base + path, json.dumps(body).encode() if body is not None else None,
@@ -24,11 +24,6 @@ def main():
                     return response.status, json.loads(response.read())
             except urllib.error.HTTPError as error:
                 return error.code, json.loads(error.read())
-        def raw(path, uid):
-            req = urllib.request.Request(base + path, headers={"X-User-ID": uid})
-            try:
-                with urllib.request.urlopen(req, timeout=3) as response: return response.status, response.read(), response.headers.get("Content-Type")
-            except urllib.error.HTTPError as error: return error.code, error.read(), error.headers.get("Content-Type")
         def ok(condition, name):
             print(("PASS " if condition else "FAIL ") + name, flush=True)
             if not condition: raise AssertionError(name)
@@ -53,6 +48,7 @@ def main():
             ok(call("POST", "/api/trips", {"destination": "goa", "days": 99})[0] == 422, "days out of range rejected")
             ok(call("POST", "/api/trips", {"destination": "goa", "interests": ["x"]})[0] == 422, "bad interest rejected")
             tid = trip["id"]; before = trip["budget"]["total"]
+            ok(call("GET", "/api/trips", uid="u2")[1] == [], "trips isolated to authenticated account")
             _, t = call("POST", f"/api/trips/{tid}/chat", {"message": "add a day"})
             ok(len(t["days"]) == 5, "chat adds a day")
             _, t = call("POST", f"/api/trips/{tid}/chat", {"message": "remove day 1"})
@@ -79,17 +75,14 @@ def main():
             ok(c == 201 and len(snap["groups"]) == 1, "community trip creation")
             c, joined = call("POST", f"/api/social/groups/{gid}/join", {}, "u2")
             ok(c == 200 and len(joined["groups"][0]["members"]) == 2, "traveler joins community trip")
+            ok(call("POST", f"/api/social/groups/{gid}/photos", {"name": "disabled.png"})[0] == 404, "group photo storage endpoint is disabled")
             ok(call("GET", f"/api/social/groups/{gid}/space", uid="u3")[0] == 403, "non-member cannot access group space")
             c, expense = call("POST", f"/api/social/groups/{gid}/expenses", {"title": "Hotel", "amount": 1200}, "u1")
             ok(c == 201 and expense["expense"]["amount"] == 1200, "group member adds shared expense")
             space = call("GET", f"/api/social/groups/{gid}/space", uid="u2")[1]
             ok(space["total"] == 1200 and len(space["balances"]) == 2 and space["balances"][0]["share"] == 600, "expense split equally across group members")
             ok(call("POST", f"/api/social/groups/{gid}/expenses", {"title": "Unauthorized", "amount": 99}, "u3")[0] == 403, "non-member cannot add expenses")
-            png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1XcAAAAASUVORK5CYII="
-            c, uploaded = call("POST", f"/api/social/groups/{gid}/photos", {"name": "memory.png", "mime": "image/png", "data": png}, "u1")
-            photo_id = uploaded["photo"]["id"]
-            ok(c == 201 and raw(f"/api/social/groups/{gid}/photos/{photo_id}", "u2")[0] == 200, "group member uploads and views private photo")
-            ok(raw(f"/api/social/groups/{gid}/photos/{photo_id}", "u3")[0] == 403, "non-member cannot view group photos")
+            ok(call("GET", f"/api/social/groups/{gid}/space", uid="u3")[0] == 403, "non-member cannot access group space")
             call("POST", "/api/social/swipe", {"target_id": "u2", "direction": "like"}, "u1")
             c, matched = call("POST", "/api/social/swipe", {"target_id": "u1", "direction": "like"}, "u2")
             ok(c == 200 and matched["matched"], "mutual swipe creates a match")
