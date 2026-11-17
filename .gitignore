@@ -1,47 +1,73 @@
-# Local Firebase web configuration
-web/.env.local
-web/.env.*.local
+# ============================================================
+# Roamly — Complete Travel Bundle (.gitignore)
+# Generated for professional GitHub publishing
+# ============================================================
 
-# Environment variables - never commit these!
+# ✅ Python bytecode cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ✅ Virtual environments (never commit)
+venv/
+.env/
+.venv/
+
+# ✅ Environment variables & API secrets (NEVER commit these!)
 .env
 .env.*
 !.env.example
 
-# Python
-__pycache__/
-*.py[cod]
-
-# Data files - generated at runtime
+# ✅ Generated runtime data
 data/trips.json
 data/social.json
 data/group_photos/
 
-# Node
-web/node_modules/
-web/dist/
-
-# Local prototype data and uploaded media
-# Keep the supplied trips.json reference file; ignore future runtime data.
-
-# Security - never commit these (API keys, secrets, tokens)
-secrets.json
-keys.json
-config*.json
-*.key
-*.pem
-*.crt
-*.cert
-
-# Operating system
-.DS_Store
-Thumbs.db
-
-# Distribution / packaging
+# ✅ Python distribution / packaging
 dist/
 build/
 *.egg-info/
 
-# Database files
+# ✅ IPython / Jupyter cache
+__pycache__/
+
+# ✅ Local Firebase web configuration
+web/.env.local
+web/.env.*.local
+
+# ✅ Node / Vite build artifacts
+web/node_modules/
+web/dist/
+
+# ✅ Database files (never commit — contains credentials etc)
 *.db
 *.sqlite
 *.sqlite3
+
+# ✅ Secret / key files (never commit — prevents GitHub key leaks)
+secrets.json
+keys.json
+*.key
+*.pem
+*.crt
+*.cert
+config*.json
+
+# ✅ Operating system junk
+.DS_Store
+Thumbs.db
+
+# ✅ React / Vite public output (build-generated, not source)
+web/public/
+
+# ✅ Test / coverage artifacts
+.hcov/
+.coverage
+
+# ✅ Lint / format outputs
+.prettier.json
+eslint.cache.js
+
+# ============================================================
+# End of .gitignore
+# ============================================================
